@@ -39,3 +39,75 @@ Il peut être relancé sans risque.
 
 <!-- Noms du binôme -->
 - KarimHaddadi20 (solo, binôme absent)
+
+## Labo — déployer par PR, dérive, revenir en arrière
+
+Travail fait seule : pas de binôme à inviter. Le ruleset sur `main` exige une pull request, sans relecture obligatoire, pour pouvoir merger soi-même. Argo CD surveille `https://github.com/KarimHaddadi20/taskflow-gitops.git`, branche `main`, dossier `apps/taskflow`. `selfHeal` et `prune` sont activés. Argo CD relit Git toutes les 60 secondes. Contexte Kubernetes : `kind-cicd` (dans WSL).
+
+Le fork avait été pris sur un dépôt déjà passé en `2.0.0`. La [PR 1](https://github.com/KarimHaddadi20/taskflow-gitops/pull/1) remet l'image à `1.0.0` et pointe Argo CD vers ce fork. C'est le vrai point de départ du labo.
+
+### Où prendre les captures
+
+Une capture sans phrase ne montre pas ce qui a changé. Pour chaque déploiement, deux vues, puis le paragraphe de la section correspondante juste en dessous.
+
+1. **Argo CD** — [https://localhost:8080](https://localhost:8080), utilisateur `admin`. Ouvrir l'application `taskflow`, puis l'horloge **History and rollback**. Chaque ligne est un déploiement : heure, révision Git, état. Capturer la ligne du déploiement dont on parle, pas seulement le badge Synced du moment présent.
+2. **GitHub** — onglet **Files changed** de la pull request liée à cette révision. On y voit la ligne qui a vraiment changé (`image:` ou le fichier supprimé).
+
+La dérive ne crée pas de ligne dans History : Git n'a pas changé. Elle se raconte avec les heures mesurées ci-dessous, pas avec une cinquième révision.
+
+Sur cette vue, la carte du haut est le déploiement le plus récent. Chaque carte se lit ainsi : **Deployed At** est l'heure où Argo CD a appliqué le commit, **Revision** est le commit Git, **Authored by** cite la pull request mergée, **Initiated by: automated sync policy** veut dire que personne n'a cliqué sur Sync. **Time to deploy** (6 s, 8 s) est seulement la durée de l'application une fois le sync commencé. Ce n'est pas le délai depuis le merge : ce délai-là est d'environ une minute, le temps qu'Argo CD relise Git.
+
+| History Argo CD | Heure du sync | Révision | Pull request | Ce que le cluster devient |
+| --- | --- | --- | --- | --- |
+| 0 | 11:13 | `602bb4e` | [PR 1](https://github.com/KarimHaddadi20/taskflow-gitops/pull/1) | image `1.0.0`, 4 replicas, Service présent |
+| 1 | 11:19 | `b810163` | [PR 2](https://github.com/KarimHaddadi20/taskflow-gitops/pull/2) | image `2.0.0` |
+| 2 | 11:23 | `6ff7d67` | [PR 3](https://github.com/KarimHaddadi20/taskflow-gitops/pull/3) | retour à l'image `1.0.0` |
+| 3 | 11:27 | `3610571` | [PR 4](https://github.com/KarimHaddadi20/taskflow-gitops/pull/4) | Service retiré, Deployment conservé |
+
+La capture ci-dessous est la suite de l'historique, plus ancienne. La carte du haut est le passage en `2.0.0` (PR 2). La carte du bas est le premier déploiement en `1.0.0` (PR 1).
+
+![Historique Argo CD : image 2.0.0 b810163 puis premier 1.0.0 602bb4e](captures/argo-history-1.0.0-et-2.0.0.png)
+
+### 1. Premier déploiement — image 1.0.0
+
+Capture : la carte du bas de l'image, révision `602bb4e`, déployée à 11:13:39, et le diff de la PR 1.
+
+`kubectl apply -f argocd/application.yaml` enregistre seulement l'application dans Argo CD. Ensuite Argo CD va lire Git. À 11:14 l'application est Synced et Healthy : 4 pods, image `1.0.0`. `observe.sh` donne 40 réponses `version=1.0.0 http=200`. Personne n'a créé le Deployment à la main.
+
+### 2. Déploiement de la 2.0.0
+
+Capture : la carte du haut de l'image, révision `b810163`, déployée à 11:19:31, et le diff de la PR 2, la ligne `image: ...:2.0.0`. **Time to deploy : 5 s** est la durée du sync, pas l'attente depuis le merge de 11:18:13.
+
+La PR 2 est mergée à 11:18:14. À 11:19:17 le cluster répond encore `1.0.0`. À 11:19:35 Argo CD a pris le nouveau commit et lance le rollout. À 11:20:00 les 4 pods sont Healthy en `2.0.0`. Délai : 81 secondes jusqu'à la nouvelle image, 1 minute 46 jusqu'à Healthy. Ce délai est le temps entre le merge et le prochain passage d'Argo CD sur Git, plus le redémarrage des pods.
+
+### 3. Dérive, puis correction par Argo CD
+
+Pas de capture d'historique pour cette étape : elle n'a pas de révision. Si on la refait devant l'écran, capturer l'application au moment où le Deployment vivant n'a plus 4 replicas ni l'image `2.0.0`, puis la même vue une minute plus tard, redevenue identique à Git.
+
+À 11:20:32, deux commandes écartent le cluster de Git : `kubectl scale` passe à 1 replica, `kubectl set image` passe à `1.1.0`. À 11:20:36 le cluster est bien dans cet état. À 11:20:45 Argo CD a déjà réécrit le Deployment : 4 replicas, image `2.0.0`. À 11:21:14 il est de nouveau Healthy. Git n'a pas reçu de commit. C'est `selfHeal` qui a ramené le cluster sur l'état du dépôt.
+
+La capture ci-dessous est le haut de l'historique Argo CD. La carte du haut est le prune (PR 4). La carte du dessous est le revert (PR 3).
+
+![Historique Argo CD : prune 3610571 puis revert 6ff7d67](captures/argo-history-revert-prune.png)
+
+### 4. Revert — retour à l'image 1.0.0
+
+Capture : la carte du bas de l'image, révision `6ff7d67`, déployée à 11:23:52, et la PR 3, dont le titre est `Revert "Passer TaskFlow en image 2.0.0"`.
+
+Le bouton Revert de la PR 2 ouvre une nouvelle pull request. Elle est mergée à 11:23:02. Argo CD synchronise ce commit à 11:23:52. À 11:24:12 les 4 pods sont Healthy en `1.0.0`. `observe.sh` redonne 40 réponses `version=1.0.0 http=200`. Le retour arrière est un nouveau commit sur `main`, pas une modification directe des pods.
+
+### 5. Bonus — suppression du Service (prune)
+
+Capture : la carte du haut de l'historique, révision `3610571`, déployée à 11:27:42, et le diff ci-dessous. Les 13 lignes de `apps/taskflow/service.yaml` sont supprimées. Ce fichier n'est plus dans Git, donc Argo CD retire le Service du cluster.
+
+![Diff de la PR 4 : suppression de service.yaml](captures/pr4-suppression-service.png)
+
+La PR 4 retire `apps/taskflow/service.yaml`. Merge à 11:26:18. À 11:27:41 le Service n'est plus dans le namespace. À 11:27:47 l'application est de nouveau Synced et Healthy. Le Deployment `1.0.0` est toujours là, en 4 pods. Argo CD a effacé la ressource qui n'existe plus dans Git parce que `prune: true`.
+
+### Réponses
+
+**Push ou pull.** C'est du pull. Argo CD interroge Git environ chaque minute et aligne le cluster. Le merge de la PR 2 n'a rien poussé dans Kubernetes : l'image n'a changé qu'au sync de 11:19, plus d'une minute après le merge.
+
+**Qui a corrigé quoi.** La PR 2 corrige Git (l'état voulu passe à `2.0.0`) et Argo CD aligne le cluster. La dérive est corrigée par Argo CD seul, via `selfHeal` : Git reste en `2.0.0` et 4 replicas, le cluster y revient. Le revert est corrigé dans Git par la PR 3, puis Argo CD retire la `2.0.0`. Le Service est retiré par Argo CD via `prune`, parce que le fichier n'est plus dans le dépôt.
+
+**Pourquoi un git revert.** Le bouton Revert ajoute un commit qui annule le précédent. L'historique reste lisible : la PR 2 a déployé `2.0.0`, la PR 3 l'a annulée. Un `reset` réécrirait `main`, ce que le ruleset interdit, alors qu'Argo CD a déjà synchronisé le commit `2.0.0`.
