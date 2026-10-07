@@ -146,3 +146,15 @@ L'arbre ne montre plus `taskflow-preview`. Un seul Service, `taskflow`. Les 4 po
 ![Arbre canary en 1.1.0 : un Service, 4 pods, l'ancien ReplicaSet vide](captures/canary-arbre-1.1.0.png)
 
 Aucun palier canary n'a encore commencé : l'image n'a pas changé. Le prochain déploiement, l'image `2.0.0`, enverra d'abord 25 % du trafic, soit 1 pod sur 4.
+
+### Canary — 25 % en 2.0.0
+
+L'image passe à `2.0.0` avec la [PR 15](https://github.com/KarimHaddadi20/taskflow-gitops/pull/15), mergée à 15:19:40. Le Rollout s'arrête tout seul sur la première pause, `CanaryPauseStep`, à 15:21:42. Étape 1/6, poids demandé 25, poids réel 25. Sans maillage de service, ce poids est une part des pods : 1 pod sur 4.
+
+![Canary à 25 % : 1 pod en 2.0.0 et 3 pods en 1.1.0](captures/canary-25.png)
+
+- `taskflow-c6cf57bd6` : 1 pod, `taskflow-c6cf57bd6-w5q57`, en `2.0.0`. C'est le canary, créé avec ce déploiement.
+- `taskflow-78cdc8775b` : 3 pods, en `1.1.0`. C'est la version stable, celle qui recevait déjà tout le trafic.
+- `taskflow-5769dcb86c` : aucun pod. C'est l'ancienne `1.0.0`, déjà réduite à zéro.
+
+`observe.sh taskflow 40` pendant cette pause : 33 réponses `version=1.1.0 http=200` et 7 réponses `version=2.0.0 http=200`. Les deux versions répondent correctement. Les 7 requêtes sur 40 tombent sur l'unique pod `2.0.0` : autour d'un quart, pas une coupure nette. Une partie des utilisateurs de la production voit déjà la `2.0.0`, alors que le blue-green la cachait derrière `taskflow-preview` jusqu'à la promotion.
