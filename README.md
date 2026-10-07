@@ -170,3 +170,15 @@ La promotion quitte la pause manuelle des 25 %. Le Rollout passe à l'étape 3/6
 - `taskflow-5769dcb86c` : toujours aucun pod.
 
 `observe.sh taskflow 40` : 21 réponses `version=1.1.0 http=200` et 19 réponses `version=2.0.0 http=200`. Le trafic suit bien la moitié des pods. La `2.0.0` répond correctement, et elle est déjà vue par environ un utilisateur sur deux.
+
+### Canary — 75 % en 2.0.0
+
+La promotion quitte la pause des 50 %. Le Rollout passe à l'étape 5/6 à 16:04:29 : poids demandé 75, poids réel 75, message `CanaryPauseStep`. Cette pause du manifeste dure 30 s. Elle a été maintenue le temps de la capture.
+
+![Canary à 75 % : 3 pods en 2.0.0 et 1 pod en 1.1.0](captures/canary-75.png)
+
+- `taskflow-c6cf57bd6` : 3 pods en `2.0.0`. `w5q57` et `phsld` étaient déjà là. `88cqt` est le pod ajouté pour le palier 75 %.
+- `taskflow-78cdc8775b` : 1 seul pod en `1.1.0`, `ptt4j`. `9w4f8` a été arrêté.
+- `taskflow-5769dcb86c` : toujours aucun pod.
+
+`observe.sh taskflow 40` : 12 réponses `version=1.1.0 http=200` et 28 réponses `version=2.0.0 http=200`. Environ trois requêtes sur quatre tombent sur la `2.0.0`. Elle répond correctement. Il reste un quart du trafic sur l'ancien pod.
