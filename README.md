@@ -182,3 +182,15 @@ La promotion quitte la pause des 50 %. Le Rollout passe à l'étape 5/6 à 16:04
 - `taskflow-5769dcb86c` : toujours aucun pod.
 
 `observe.sh taskflow 40` : 12 réponses `version=1.1.0 http=200` et 28 réponses `version=2.0.0 http=200`. Environ trois requêtes sur quatre tombent sur la `2.0.0`. Elle répond correctement. Il reste un quart du trafic sur l'ancien pod.
+
+### Canary — 100 % en 2.0.0
+
+La dernière promotion quitte la pause des 75 %. Il n'y a plus d'étape après. À 16:08:41 le Rollout est Healthy, étape 6/6, poids 100. La `2.0.0` n'est plus un canary : c'est la version stable.
+
+![Canary à 100 % : 4 pods en 2.0.0, les anciennes révisions vides](captures/canary-100.png)
+
+- `taskflow-c6cf57bd6` : 4 pods en `2.0.0`. `w5q57`, `phsld` et `88cqt` étaient déjà là. `4n67c` est le pod ajouté pour finir le déploiement.
+- `taskflow-78cdc8775b` : plus aucun pod. C'était la `1.1.0`.
+- `taskflow-5769dcb86c` : toujours vide. C'était la `1.0.0`.
+
+`observe.sh taskflow 40` : 40 réponses `version=2.0.0 http=200`. Plus aucune requête ne tombe sur `1.1.0`. Le canary de la `2.0.0` est terminé. Les quatre paliers ont gardé 4 pods au total : le coût en ressources n'a pas doublé, contrairement au blue-green, mais une part des utilisateurs voyait déjà la nouvelle version avant la fin.
