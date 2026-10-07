@@ -38,4 +38,4 @@ Il peut être relancé sans risque.
 ## Équipe
 
 <!-- Noms du binôme -->
-- À compléter
+- KarimHaddadi20 (solo, binôme absent)
