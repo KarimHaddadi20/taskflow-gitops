@@ -194,3 +194,34 @@ La dernière promotion quitte la pause des 75 %. Il n'y a plus d'étape après. 
 - `taskflow-5769dcb86c` : toujours vide. C'était la `1.0.0`.
 
 `observe.sh taskflow 40` : 40 réponses `version=2.0.0 http=200`. Plus aucune requête ne tombe sur `1.1.0`. Le canary de la `2.0.0` est terminé. Les quatre paliers ont gardé 4 pods au total : le coût en ressources n'a pas doublé, contrairement au blue-green, mais une part des utilisateurs voyait déjà la nouvelle version avant la fin.
+
+### Canary — 2.1.0 à 25 %
+
+L'image passe à `2.1.0` avec la [PR 17](https://github.com/KarimHaddadi20/taskflow-gitops/pull/17), mergée à 16:17:09. Le Rollout s'arrête sur la première pause à 16:19:06. Étape 1/6, poids 25, message `CanaryPauseStep`.
+
+![Canary 2.1.0 à 25 % : 1 pod en 2.1.0 et 3 pods en 2.0.0](captures/canary-21-25.png)
+
+- `taskflow-df976ccb5` : 1 pod, `df9bx`, en `2.1.0`. C'est le canary.
+- `taskflow-c6cf57bd6` : 3 pods en `2.0.0`, `w5q57`, `phsld` et `88cqt`. `4n67c` a été arrêté pour laisser la place.
+
+`observe.sh taskflow 40` pendant cette pause : 32 réponses `version=2.0.0 http=200`, 4 réponses `version=2.1.0 http=200`, et 4 réponses `http=500` sans version lisible. Huit requêtes sur 40 touchent le pod `2.1.0`. La moitié de celles-là est en erreur. Des utilisateurs de la production reçoivent un HTTP 500 alors que le canary n'en est qu'à 25 %.
+
+### Abort de la 2.1.0
+
+L'abort est lancé à 16:23:16. À 16:23:32 il ne reste plus de pod `2.1.0`. Quatre pods `2.0.0` tournent. À 16:26:32 c'est encore le cas. Argo CD reste Synced. Le Rollout reste Degraded. Le canary ne redémarre pas. Git demande toujours l'image `2.1.0` : l'abort n'a pas modifié le fichier. La spec du cluster correspond déjà à Git, donc `selfHeal` n'a rien à réécrire. Le contrôleur refuse seulement d'avancer la révision 6.
+
+![Après l'abort : canary 2.1.0 vide, 4 pods en 2.0.0, Rollout Degraded](captures/canary-21-abort.png)
+
+- `taskflow-df976ccb5` : aucun pod. Le canary `2.1.0` est réduit à zéro.
+- `taskflow-c6cf57bd6` : 4 pods en `2.0.0`. `w5q57`, `phsld` et `88cqt` étaient déjà là. `ckss9` est créé à l'abort pour remplacer `df9bx`.
+- Le Rollout porte la croix rouge. Message : `RolloutAborted: Rollout aborted update to revision 6`. Poids 0.
+
+`observe.sh taskflow 40` après l'abort : 40 réponses `version=2.0.0 http=200`. Plus aucun HTTP 500.
+
+### Blue-Green ou Canary pour TaskFlow ?
+
+Le blue-green a coûté 8 pods au lieu de 4. Les utilisateurs du Service `taskflow` sont restés sur `1.0.0` jusqu'à la promotion de 14:17:02. La `1.1.0` n'était joignable que par `taskflow-preview`. Le risque utilisateur est faible. Le coût est le doublement des pods pendant toute la vérification.
+
+Le canary est resté à 4 pods. Aux paliers 25, 50, 75 puis 100 %, la part des réponses a suivi la part des pods, et la `2.0.0` répondait en HTTP 200. La `2.1.0` a changé la conclusion : dès 25 %, 4 requêtes sur 40 sont revenues en HTTP 500. L'abort a rendu l'ensemble du trafic à la `2.0.0` en 16 secondes, sans nouvelle pull request.
+
+Pour TaskFlow, le blue-green est le choix adapté. Une version peut être mauvaise, et le palier `2.1.0` montre que le canary envoie cette erreur à de vrais utilisateurs avant qu'on ait le temps d'annuler. Le prix de l'éviter est connu : 4 pods supplémentaires jusqu'à la promotion. Le canary économise ces pods et prouve le comportement sur du trafic réel, ce qui suffit pour une version saine comme la `2.0.0`. Il ne protège pas les utilisateurs d'une version qui répond 500.
