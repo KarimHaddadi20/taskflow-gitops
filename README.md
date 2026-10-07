@@ -124,6 +124,13 @@ La carte du bas, révision `1fc5901`, est déployée à 14:12:28. C'est la [PR 6
 
 La carte du haut, révision `6dcb1a7`, est déployée à 14:15:30. C'est la [PR 7](https://github.com/KarimHaddadi20/taskflow-gitops/pull/7), mergée à 14:14:33. Seule la ligne `image` passe à `1.1.0`. **Time to deploy : 6 s.** Argo CD a attendu son prochain passage sur Git, environ une minute, avant d'appliquer.
 
-Cette capture ne montre pas la pause. À 14:15:54 le Rollout est en `BlueGreenPause` : 8 pods, 4 en `1.0.0` et 4 en `1.1.0`. `observe.sh` donne 40 réponses `version=1.0.0 http=200` sur `taskflow`, et 40 réponses `version=1.1.0 http=200` sur `taskflow-preview`. La production n'a pas bougé. La nouvelle version ne reçoit que le Service de preview.
+La capture suivante est l'arbre de l'application pendant la pause, pas l'historique. L'icône pause est sur le Rollout. Deux ReplicaSets tournent en même temps.
+
+![Pause blue-green : 4 pods en 1.0.0 et 4 pods en 1.1.0](captures/bluegreen-pause-8-pods.png)
+
+- `taskflow-5769dcb86c` : 4 pods en `1.0.0`. C'est la version active, branchée sur le Service `taskflow`.
+- `taskflow-78cdc8775b` : 4 pods en `1.1.0`. C'est la version de preview, branchée sur le Service `taskflow-preview`.
+
+À 14:15:54 le Rollout était en `BlueGreenPause`. `observe.sh` donne 40 réponses `version=1.0.0 http=200` sur `taskflow`, et 40 réponses `version=1.1.0 http=200` sur `taskflow-preview`. La production n'a pas bougé. La nouvelle version ne reçoit que le Service de preview. Le coût est immédiat : 8 pods au lieu de 4, le temps de vérifier.
 
 Promotion à 14:17:02. À 14:17:50 il ne reste que 4 pods, tous en `1.1.0`. Les deux Services répondent alors `version=1.1.0 http=200`. L'ancienne version a été arrêtée après `scaleDownDelaySeconds: 30`. Le coût du blue-green est ce doublement : 8 pods le temps de la vérification, et aucun utilisateur de la production ne voit la `1.1.0` avant la promotion.
