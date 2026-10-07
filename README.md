@@ -111,3 +111,19 @@ La PR 4 retire `apps/taskflow/service.yaml`. Merge à 11:26:18. À 11:27:41 le S
 **Qui a corrigé quoi.** La PR 2 corrige Git (l'état voulu passe à `2.0.0`) et Argo CD aligne le cluster. La dérive est corrigée par Argo CD seul, via `selfHeal` : Git reste en `2.0.0` et 4 replicas, le cluster y revient. Le revert est corrigé dans Git par la PR 3, puis Argo CD retire la `2.0.0`. Le Service est retiré par Argo CD via `prune`, parce que le fichier n'est plus dans le dépôt.
 
 **Pourquoi un git revert.** Le bouton Revert ajoute un commit qui annule le précédent. L'historique reste lisible : la PR 2 a déployé `2.0.0`, la PR 3 l'a annulée. Un `reset` réécrirait `main`, ce que le ruleset interdit, alors qu'Argo CD a déjà synchronisé le commit `2.0.0`.
+
+## Labo de l'après-midi — Blue-Green, puis Canary
+
+Les captures se prennent au même endroit que le matin : Argo CD, application `taskflow`, horloge **History and rollback**. Chaque carte est un déploiement. On colle la capture dans ce README, puis on écrit ce que la carte a changé. **Time to deploy** reste la durée du sync, pas le délai depuis le merge.
+
+### Blue-green
+
+![Historique Argo CD du blue-green : PR 7 en 1.1.0 puis PR 6 en 1.0.0](captures/argo-history-bluegreen.png)
+
+La carte du bas, révision `1fc5901`, est déployée à 14:12:28. C'est la [PR 6](https://github.com/KarimHaddadi20/taskflow-gitops/pull/6), mergée à 14:11:26. Le Deployment est remplacé par un Rollout blue-green : service actif `taskflow`, service de preview `taskflow-preview`, promotion manuelle. L'image reste `1.0.0`. À 14:13:13 le Rollout est Healthy, 4 pods. **Time to deploy : 15 s.**
+
+La carte du haut, révision `6dcb1a7`, est déployée à 14:15:30. C'est la [PR 7](https://github.com/KarimHaddadi20/taskflow-gitops/pull/7), mergée à 14:14:33. Seule la ligne `image` passe à `1.1.0`. **Time to deploy : 6 s.** Argo CD a attendu son prochain passage sur Git, environ une minute, avant d'appliquer.
+
+Cette capture ne montre pas la pause. À 14:15:54 le Rollout est en `BlueGreenPause` : 8 pods, 4 en `1.0.0` et 4 en `1.1.0`. `observe.sh` donne 40 réponses `version=1.0.0 http=200` sur `taskflow`, et 40 réponses `version=1.1.0 http=200` sur `taskflow-preview`. La production n'a pas bougé. La nouvelle version ne reçoit que le Service de preview.
+
+Promotion à 14:17:02. À 14:17:50 il ne reste que 4 pods, tous en `1.1.0`. Les deux Services répondent alors `version=1.1.0 http=200`. L'ancienne version a été arrêtée après `scaleDownDelaySeconds: 30`. Le coût du blue-green est ce doublement : 8 pods le temps de la vérification, et aucun utilisateur de la production ne voit la `1.1.0` avant la promotion.
