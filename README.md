@@ -134,3 +134,15 @@ La capture suivante est l'arbre de l'application pendant la pause, pas l'histori
 À 14:15:54 le Rollout était en `BlueGreenPause`. `observe.sh` donne 40 réponses `version=1.0.0 http=200` sur `taskflow`, et 40 réponses `version=1.1.0 http=200` sur `taskflow-preview`. La production n'a pas bougé. La nouvelle version ne reçoit que le Service de preview. Le coût est immédiat : 8 pods au lieu de 4, le temps de vérifier.
 
 Promotion à 14:17:02. À 14:17:50 il ne reste que 4 pods, tous en `1.1.0`. Les deux Services répondent alors `version=1.1.0 http=200`. L'ancienne version a été arrêtée après `scaleDownDelaySeconds: 30`. Le coût du blue-green est ce doublement : 8 pods le temps de la vérification, et aucun utilisateur de la production ne voit la `1.1.0` avant la promotion.
+
+### Canary — départ en 1.1.0
+
+La carte du haut est le passage au canary. Révision `b424b6e`, déployée à 15:09:38. C'est la [PR 13](https://github.com/KarimHaddadi20/taskflow-gitops/pull/13), mergée à 15:08:03. La stratégie blue-green est remplacée par un canary, l'image reste `1.1.0`, et le Service `taskflow-preview` est supprimé. **Time to deploy : 20 s.** **Initiated by: automated sync policy** : personne n'a cliqué sur Sync. La carte du dessous, `5dfee80`, est encore le blue-green de la PR 11.
+
+![Historique Argo CD : PR 13 canary en 1.1.0, puis PR 11](captures/canary-history-1.1.0.png)
+
+L'arbre ne montre plus `taskflow-preview`. Un seul Service, `taskflow`. Les 4 pods qui tournent sont ceux de `taskflow-78cdc8775b`, en `1.1.0`. Le ReplicaSet `taskflow-5769dcb86c` est l'ancienne révision `1.0.0` : il reste affiché, sans pod. Il ne reçoit plus de trafic.
+
+![Arbre canary en 1.1.0 : un Service, 4 pods, l'ancien ReplicaSet vide](captures/canary-arbre-1.1.0.png)
+
+Aucun palier canary n'a encore commencé : l'image n'a pas changé. Le prochain déploiement, l'image `2.0.0`, enverra d'abord 25 % du trafic, soit 1 pod sur 4.
