@@ -146,3 +146,51 @@ L'arbre ne montre plus `taskflow-preview`. Un seul Service, `taskflow`. Les 4 po
 ![Arbre canary en 1.1.0 : un Service, 4 pods, l'ancien ReplicaSet vide](captures/canary-arbre-1.1.0.png)
 
 Aucun palier canary n'a encore commencé : l'image n'a pas changé. Le prochain déploiement, l'image `2.0.0`, enverra d'abord 25 % du trafic, soit 1 pod sur 4.
+
+### Canary — 25 % en 2.0.0
+
+L'image passe à `2.0.0` avec la [PR 15](https://github.com/KarimHaddadi20/taskflow-gitops/pull/15), mergée à 15:19:40. Le Rollout s'arrête tout seul sur la première pause, `CanaryPauseStep`, à 15:21:42. Étape 1/6, poids demandé 25, poids réel 25. Sans maillage de service, ce poids est une part des pods : 1 pod sur 4.
+
+![Canary à 25 % : 1 pod en 2.0.0 et 3 pods en 1.1.0](captures/canary-25.png)
+
+- `taskflow-c6cf57bd6` : 1 pod, `taskflow-c6cf57bd6-w5q57`, en `2.0.0`. C'est le canary, créé avec ce déploiement.
+- `taskflow-78cdc8775b` : 3 pods, en `1.1.0`. C'est la version stable, celle qui recevait déjà tout le trafic.
+- `taskflow-5769dcb86c` : aucun pod. C'est l'ancienne `1.0.0`, déjà réduite à zéro.
+
+`observe.sh taskflow 40` pendant cette pause : 33 réponses `version=1.1.0 http=200` et 7 réponses `version=2.0.0 http=200`. Les deux versions répondent correctement. Les 7 requêtes sur 40 tombent sur l'unique pod `2.0.0` : autour d'un quart, pas une coupure nette. Une partie des utilisateurs de la production voit déjà la `2.0.0`, alors que le blue-green la cachait derrière `taskflow-preview` jusqu'à la promotion.
+
+### Canary — 50 % en 2.0.0
+
+La promotion quitte la pause manuelle des 25 %. Le Rollout passe à l'étape 3/6 à 15:57:57 : poids demandé 50, poids réel 50, message `CanaryPauseStep`. Cette pause du manifeste dure 60 s. Elle a été maintenue le temps de la capture, pour ne pas enchaîner sur 75 % pendant la photo.
+
+![Canary à 50 % : 2 pods en 2.0.0 et 2 pods en 1.1.0](captures/canary-50.png)
+
+- `taskflow-c6cf57bd6` : 2 pods en `2.0.0`. `w5q57` était déjà là à 25 %. `phsld` est le pod ajouté pour atteindre la moitié.
+- `taskflow-78cdc8775b` : 2 pods en `1.1.0`, `9w4f8` et `ptt4j`. Le troisième pod `1.1.0` a été arrêté.
+- `taskflow-5769dcb86c` : toujours aucun pod.
+
+`observe.sh taskflow 40` : 21 réponses `version=1.1.0 http=200` et 19 réponses `version=2.0.0 http=200`. Le trafic suit bien la moitié des pods. La `2.0.0` répond correctement, et elle est déjà vue par environ un utilisateur sur deux.
+
+### Canary — 75 % en 2.0.0
+
+La promotion quitte la pause des 50 %. Le Rollout passe à l'étape 5/6 à 16:04:29 : poids demandé 75, poids réel 75, message `CanaryPauseStep`. Cette pause du manifeste dure 30 s. Elle a été maintenue le temps de la capture.
+
+![Canary à 75 % : 3 pods en 2.0.0 et 1 pod en 1.1.0](captures/canary-75.png)
+
+- `taskflow-c6cf57bd6` : 3 pods en `2.0.0`. `w5q57` et `phsld` étaient déjà là. `88cqt` est le pod ajouté pour le palier 75 %.
+- `taskflow-78cdc8775b` : 1 seul pod en `1.1.0`, `ptt4j`. `9w4f8` a été arrêté.
+- `taskflow-5769dcb86c` : toujours aucun pod.
+
+`observe.sh taskflow 40` : 12 réponses `version=1.1.0 http=200` et 28 réponses `version=2.0.0 http=200`. Environ trois requêtes sur quatre tombent sur la `2.0.0`. Elle répond correctement. Il reste un quart du trafic sur l'ancien pod.
+
+### Canary — 100 % en 2.0.0
+
+La dernière promotion quitte la pause des 75 %. Il n'y a plus d'étape après. À 16:08:41 le Rollout est Healthy, étape 6/6, poids 100. La `2.0.0` n'est plus un canary : c'est la version stable.
+
+![Canary à 100 % : 4 pods en 2.0.0, les anciennes révisions vides](captures/canary-100.png)
+
+- `taskflow-c6cf57bd6` : 4 pods en `2.0.0`. `w5q57`, `phsld` et `88cqt` étaient déjà là. `4n67c` est le pod ajouté pour finir le déploiement.
+- `taskflow-78cdc8775b` : plus aucun pod. C'était la `1.1.0`.
+- `taskflow-5769dcb86c` : toujours vide. C'était la `1.0.0`.
+
+`observe.sh taskflow 40` : 40 réponses `version=2.0.0 http=200`. Plus aucune requête ne tombe sur `1.1.0`. Le canary de la `2.0.0` est terminé. Les quatre paliers ont gardé 4 pods au total : le coût en ressources n'a pas doublé, contrairement au blue-green, mais une part des utilisateurs voyait déjà la nouvelle version avant la fin.
