@@ -158,3 +158,15 @@ L'image passe à `2.0.0` avec la [PR 15](https://github.com/KarimHaddadi20/taskf
 - `taskflow-5769dcb86c` : aucun pod. C'est l'ancienne `1.0.0`, déjà réduite à zéro.
 
 `observe.sh taskflow 40` pendant cette pause : 33 réponses `version=1.1.0 http=200` et 7 réponses `version=2.0.0 http=200`. Les deux versions répondent correctement. Les 7 requêtes sur 40 tombent sur l'unique pod `2.0.0` : autour d'un quart, pas une coupure nette. Une partie des utilisateurs de la production voit déjà la `2.0.0`, alors que le blue-green la cachait derrière `taskflow-preview` jusqu'à la promotion.
+
+### Canary — 50 % en 2.0.0
+
+La promotion quitte la pause manuelle des 25 %. Le Rollout passe à l'étape 3/6 à 15:57:57 : poids demandé 50, poids réel 50, message `CanaryPauseStep`. Cette pause du manifeste dure 60 s. Elle a été maintenue le temps de la capture, pour ne pas enchaîner sur 75 % pendant la photo.
+
+![Canary à 50 % : 2 pods en 2.0.0 et 2 pods en 1.1.0](captures/canary-50.png)
+
+- `taskflow-c6cf57bd6` : 2 pods en `2.0.0`. `w5q57` était déjà là à 25 %. `phsld` est le pod ajouté pour atteindre la moitié.
+- `taskflow-78cdc8775b` : 2 pods en `1.1.0`, `9w4f8` et `ptt4j`. Le troisième pod `1.1.0` a été arrêté.
+- `taskflow-5769dcb86c` : toujours aucun pod.
+
+`observe.sh taskflow 40` : 21 réponses `version=1.1.0 http=200` et 19 réponses `version=2.0.0 http=200`. Le trafic suit bien la moitié des pods. La `2.0.0` répond correctement, et elle est déjà vue par environ un utilisateur sur deux.
