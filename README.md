@@ -225,3 +225,45 @@ Le blue-green a coûté 8 pods au lieu de 4. Les utilisateurs du Service `taskfl
 Le canary est resté à 4 pods. Aux paliers 25, 50, 75 puis 100 %, la part des réponses a suivi la part des pods, et la `2.0.0` répondait en HTTP 200. La `2.1.0` a changé la conclusion : dès 25 %, 4 requêtes sur 40 sont revenues en HTTP 500. L'abort a rendu l'ensemble du trafic à la `2.0.0` en 16 secondes, sans nouvelle pull request.
 
 Pour TaskFlow, le blue-green est le choix adapté. Une version peut être mauvaise, et le palier `2.1.0` montre que le canary envoie cette erreur à de vrais utilisateurs avant qu'on ait le temps d'annuler. Le prix de l'éviter est connu : 4 pods supplémentaires jusqu'à la promotion. Le canary économise ces pods et prouve le comportement sur du trafic réel, ce qui suffit pour une version saine comme la `2.0.0`. Il ne protège pas les utilisateurs d'une version qui répond 500.
+
+## Labo du matin — analyse automatique, 2.1.0 puis 2.2.0
+
+Le postmortem de l'incident est dans [docs/postmortem-2.1.0.md](docs/postmortem-2.1.0.md). Les heures ci-dessous sont locales (UTC+2).
+
+### Étalon en 2.0.0
+
+À 12:24:55 la production est Synced et Healthy : 4 pods en `2.0.0`. `scripts/charge.sh http://taskflow` envoie 665 requêtes en 30 s, avec 5 utilisateurs virtuels. Résultat : **0,00 % d'erreurs**, **p95 = 34,5 ms**, 665 réponses en statut 200. Les deux seuils du scénario passent (moins de 2 % d'erreurs, p95 sous 250 ms).
+
+### Analyse automatique
+
+La [PR 20](https://github.com/KarimHaddadi20/taskflow-gitops/pull/20) est mergée à 12:28:16. Elle remplace le canary manuel par les fichiers de `exemples/robustesse/` : au palier 25 %, Argo Rollouts lance le Job k6 sur le Service `taskflow-canary`. L'image reste `2.0.0`. Argo CD synchronise la révision `708cc14` à 12:29:46.
+
+La vérification de l'étape 4 : un Rollout, **aucun Deployment**, les CRD `analysisruns.argoproj.io`, `analysistemplates.argoproj.io` et `rollouts.argoproj.io`, l'AnalysisTemplate `robustesse-k6`, la ConfigMap `k6-robustesse`, et les Services `taskflow` et `taskflow-canary`.
+
+### Incident 2.1.0
+
+La [PR 21](https://github.com/KarimHaddadi20/taskflow-gitops/pull/21) passe l'image à `2.1.0`. Elle est mergée à 13:12:00. Personne ne clique sur Sync ni sur Abort. À 13:13:41 un pod `2.1.0` est prêt, poids 25. L'AnalysisRun `taskflow-df976ccb5-2-1` démarre à 13:13:54.
+
+Le Job k6 mesure, sur les seuls pods `2.1.0` : **29,20 % d'erreurs** (73 requêtes sur 250) et **p95 = 684,71 ms**. Les deux seuils sont franchis. À 13:14:56 l'AnalysisRun passe en Failed. Argo Rollouts annule tout seul. À 13:15:13 il ne reste plus de pod `2.1.0`. `observe.sh taskflow 40` redonne 40 réponses `version=2.0.0 http=200`.
+
+![AnalysisRun en échec sur 2.1.0 : Job k6 rouge, 4 pods restés en 2.0.0](captures/analysisrun-echec-2.1.0.png)
+
+- `taskflow-df976ccb5-2-1` : AnalysisRun rouge, révision 2. C'est le test lancé à 25 %.
+- Le Job `c8f660ea-…` et son pod sont en erreur. Le test a échoué, donc le déploiement s'arrête.
+- `taskflow-df976ccb5` n'a plus de pod : le canary `2.1.0` a été retiré.
+- `taskflow-c6cf57bd6` garde les 4 pods de la `2.0.0`.
+
+La [PR 22](https://github.com/KarimHaddadi20/taskflow-gitops/pull/22), revert de la PR 21, est mergée à 13:41:08. Elle ne change que la ligne `image`, revenue à `2.0.0`. L'étape `analysis` reste active.
+
+### 2.2.0 jusqu'à 100 %
+
+La [PR 23](https://github.com/KarimHaddadi20/taskflow-gitops/pull/23) passe l'image à `2.2.0`, mergée à 13:44:11. Le premier AnalysisRun, `taskflow-7ddd57d788-4-1`, échoue à 13:45:14 alors que la version répond bien : **0,00 % d'erreurs** sur 481 requêtes, mais **p95 = 293,05 ms**, au-dessus de 250 ms. Un pic de lenteur du cluster, pas une erreur applicative.
+
+Le Rollout est relancé à 13:47:05. L'AnalysisRun `taskflow-7ddd57d788-4-1.1` réussit à 13:48:06 : **0,00 % d'erreurs** sur 682 requêtes, **p95 = 60,58 ms**. Le canary enchaîne 50 %, 75 % puis 100 %. Le Rollout finit Healthy, étape 6/6, 4 pods en `2.2.0`.
+
+![AnalysisRun en succès sur 2.2.0 : le second test est vert, le premier essai reste rouge](captures/analysisrun-succes-2.2.0.png)
+
+- `taskflow-7ddd57d788-4-1` reste rouge : c'est le premier essai, celui du p95 à 293 ms.
+- `taskflow-7ddd57d788-4-1.1` est vert, et son Job est `completed`. C'est le test qui a laissé passer la `2.2.0`.
+- `taskflow-df976ccb5-2-1` reste rouge en bas : c'est l'échec de la `2.1.0`, conservé dans l'arbre.
+- Les pods de `taskflow-7ddd57d788` sont la `2.2.0`.
