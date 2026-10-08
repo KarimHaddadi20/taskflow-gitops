@@ -267,3 +267,40 @@ Le Rollout est relancé à 13:47:05. L'AnalysisRun `taskflow-7ddd57d788-4-1.1` r
 - `taskflow-7ddd57d788-4-1.1` est vert, et son Job est `completed`. C'est le test qui a laissé passer la `2.2.0`.
 - `taskflow-df976ccb5-2-1` reste rouge en bas : c'est l'échec de la `2.1.0`, conservé dans l'arbre.
 - Les pods de `taskflow-7ddd57d788` sont la `2.2.0`.
+
+## Labo C — mini-PSSI, quality gates
+
+Les cinq règles sont dans [policies/pssi.md](policies/pssi.md). conftest lit [policies/kubernetes.rego](policies/kubernetes.rego) et refuse un manifest non conforme. Trivy refuse une image du registre du cours qui porte une faille HIGH ou CRITICAL corrigeable. Les deux jobs du workflow [`.github/workflows/pssi.yml`](.github/workflows/pssi.yml) sont exigés par le ruleset. Un échec laisse le bouton Merge grisé.
+
+### R3, R4, puis le pod
+
+R1 (tag explicite, jamais `latest`) et R2 (registre `ghcr.io/9m7fjfpv9k-cyber/` seulement) étaient déjà écrites. R3 refuse un conteneur sans `resources.limits.memory`. R4 refuse un pod qui ne déclare pas `securityContext.runAsNonRoot: true`.
+
+Premier `conftest test apps/ --policy policies/`, avant le `securityContext` : une seule ligne rouge, `PSSI-R4 : le pod 'taskflow' ne déclare pas runAsNonRoot: true`. Bilan : 25 tests, 24 passed, 1 failure. R3 passe déjà, parce que le conteneur a `limits.memory: 256Mi`.
+
+Ajout de `runAsNonRoot: true` sur le pod du Rollout. Deuxième passage : 25 tests, 25 passed, 0 failure. C'est la [PR 25](https://github.com/KarimHaddadi20/taskflow-gitops/pull/25), mergée à 14:47:58.
+
+### Preuve : la PR 27 ne peut pas être mergée
+
+La [PR 27](https://github.com/KarimHaddadi20/taskflow-gitops/pull/27) remplace l'image par `nginx:latest`. Elle reste ouverte : c'est la preuve que le merge est bloqué.
+
+![PR 27 bloquée : conftest rouge et obligatoire, le bouton Merge est grisé](captures/pr27-pssi-bloquee.png)
+
+- **1 failing, 1 successful.** Le check rouge est **PSSI manifests (conftest)**, marqué Required, en échec après 5 s. Le check vert est **PSSI images (Trivy)**, marqué Required lui aussi, réussi en 7 s.
+- Le log de conftest donne les deux refus : `PSSI-R1 : le conteneur 'taskflow' utilise le tag latest (nginx:latest)` et `PSSI-R2 : l'image du conteneur 'taskflow' ne vient pas du registre autorisé (nginx:latest)`. Bilan : 25 tests, 23 passed, 2 failures.
+- Trivy reste vert parce qu'il ne scanne que les images `ghcr.io/9m7fjfpv9k-cyber/`. `nginx:latest` est hors de cette liste. C'est conftest qui bloque la pull request.
+- Le bouton **Merge pull request** est grisé. Le ruleset exige les deux checks. Tant que conftest est rouge, GitHub refuse le merge.
+
+### Exception Trivy sur l'image du cours
+
+Sur `ghcr.io/9m7fjfpv9k-cyber/taskflow:2.2.0`, Trivy signale 9 failles HIGH corrigeables : starlette 0.41.3 (CVE-2025-62727, CVE-2026-48818, CVE-2026-54283) et urllib3 1.26.20 (CVE-2025-66418, CVE-2025-66471, CVE-2026-21441, CVE-2026-44431, CVE-2026-97687, CVE-2026-97689). L'image est celle du cours, nous ne la reconstruisons pas. [`.trivyignore`](.trivyignore) écrit l'exception, la justifie, et la limite au 8 novembre 2026. La [PR 26](https://github.com/KarimHaddadi20/taskflow-gitops/pull/26), mergée à 14:54:22, repasse les deux checks au vert.
+
+### Tableau
+
+| Règle | Contrôle | Outil | Preuve |
+| --- | --- | --- | --- |
+| PSSI-R1 | Tag explicite, jamais `latest` | conftest | [PR 27](https://github.com/KarimHaddadi20/taskflow-gitops/pull/27) : `nginx:latest` refusé, check obligatoire rouge, merge grisé |
+| PSSI-R2 | Images uniquement depuis `ghcr.io/9m7fjfpv9k-cyber/` | conftest | Même log : registre non autorisé pour `nginx:latest` |
+| PSSI-R3 | Limite de mémoire sur chaque conteneur | conftest | `limits.memory: 256Mi` déjà dans le Rollout ; le passage local ne signale pas R3 |
+| PSSI-R4 | `runAsNonRoot: true` | conftest | Échec local avant le `securityContext` (24/25), puis 25/25 ; [PR 25](https://github.com/KarimHaddadi20/taskflow-gitops/pull/25) |
+| PSSI-R5 | Aucune CVE HIGH ou CRITICAL corrigeable | Trivy | 9 HIGH sur `taskflow:2.2.0` ; exception datée dans `.trivyignore` jusqu'au 8 novembre 2026 ; [PR 26](https://github.com/KarimHaddadi20/taskflow-gitops/pull/26) verte |
