@@ -38,11 +38,14 @@ Il peut être relancé sans risque.
 ## Équipe
 
 <!-- Noms du binôme -->
-- KarimHaddadi20 (solo, binôme absent)
+- Karim Haddadi (KarimHaddadi20)
+- Amine Messadi
+
+Amine Messadi a eu l'occasion d'être dans le projet suite à une absence d'une journée.
 
 ## Labo — déployer par PR, dérive, revenir en arrière
 
-Travail fait seule : pas de binôme à inviter. Le ruleset sur `main` exige une pull request, sans relecture obligatoire, pour pouvoir merger soi-même. Argo CD surveille `https://github.com/KarimHaddadi20/taskflow-gitops.git`, branche `main`, dossier `apps/taskflow`. `selfHeal` et `prune` sont activés. Argo CD relit Git toutes les 60 secondes. Contexte Kubernetes : `kind-cicd` (dans WSL).
+Le ruleset sur `main` exige une pull request, sans relecture obligatoire, pour pouvoir merger soi-même. Argo CD surveille `https://github.com/KarimHaddadi20/taskflow-gitops.git`, branche `main`, dossier `apps/taskflow`. `selfHeal` et `prune` sont activés. Argo CD relit Git toutes les 60 secondes. Contexte Kubernetes : `kind-cicd` (dans WSL).
 
 Le fork avait été pris sur un dépôt déjà passé en `2.0.0`. La [PR 1](https://github.com/KarimHaddadi20/taskflow-gitops/pull/1) remet l'image à `1.0.0` et pointe Argo CD vers ce fork. C'est le vrai point de départ du labo.
 
