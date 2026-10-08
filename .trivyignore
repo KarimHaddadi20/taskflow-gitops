@@ -1,0 +1,12 @@
+# PSSI-R5. L'image du cours taskflow:2.2.0 embarque starlette 0.41.3 et urllib3 1.26.20.
+# Ces failles HIGH ont un correctif, mais nous ne construisons pas l'image : l'exception
+# est datée et sera revue. Expiration : 8 novembre 2026.
+CVE-2025-62727 exp:2026-11-08
+CVE-2026-48818 exp:2026-11-08
+CVE-2026-54283 exp:2026-11-08
+CVE-2025-66418 exp:2026-11-08
+CVE-2025-66471 exp:2026-11-08
+CVE-2026-21441 exp:2026-11-08
+CVE-2026-44431 exp:2026-11-08
+CVE-2026-97687 exp:2026-11-08
+CVE-2026-97689 exp:2026-11-08
